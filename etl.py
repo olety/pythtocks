@@ -32,10 +32,6 @@ logging.basicConfig(format='%(levelname)s | line %(lineno)s '
 # Numpy printing setup
 np.set_printoptions(threshold=10, linewidth=79, edgeitems=5)
 
-# Constants
-# We want to get the data from 2000 till 2017
-START_DT = dt.datetime(2000, 1, 1)
-END_DT = dt.datetime(2017, 1, 1)
 
 # %% Data gathering
 
@@ -115,10 +111,11 @@ def save_tickers(folder='data/tickers', fname='tickers.csv'):
     return tickers
 
 
-def get_stock_data(start_dt, end_dt, ticker_folder='data/tickers',
-                   ticker_fname='tickers.csv', reload_tickers=False,
-                   dest_folder='data/stocks', retry_requests=True,
-                   max_retries=50, timeout=2):
+def get_stock_data(start_dt, end_dt, reload_tickers=False, retry_requests=True,
+                   max_retries=50, timeout=2,
+                   ticker_folder=os.path.join('data', 'tickers'),
+                   ticker_fname='tickers.csv',
+                   dest_folder=os.path.join('data', 'stocks')):
     '''
     Gets stock data of S&P500 from yahoo and saves it in the {folder}/{tick}.csv
 
@@ -175,9 +172,74 @@ def get_stock_data(start_dt, end_dt, ticker_folder='data/tickers',
     logging.info(f'You can find the results in the folder {dest_path}')
 
 
-# save_tickers()
+# %% Data transformation
+
+# In this step, we want to get the combined DataFrame
+# of all adjusted closing prices
+
+
+def merge_dfs(stock_folder, save_folder, reload_data=False):
+    '''
+    Merges the stock csv files into one big file with all adj. closes
+
+    Raises an exception if something goes wrong.
+    '''
+    if (os.path.isfile(os.path.join(save_folder, 'snp500_merged.csv')) and
+            not reload_data):
+        logging.info('The target file is already present in the save_folder.'
+                     ' Please use the reload_data argument to overwrite it.')
+        return
+    logging.debug('Started merging the stock data - getting the files')
+
+    fnames = [f for f in os.listdir(STOCK_FOLDER)
+              if f.endswith('.csv')]
+
+    logging.debug('Number of csv files in the folder: {}'.format(len(fnames)))
+    logging.debug(f'Filelist: {fnames}')
+
+    master_df = None
+
+    logging.debug('Starting merging dataframes')
+    for cur_fname in tqdm(fnames, desc='Files processed', file=sys.stdout,
+                          leave=False, unit='file'):
+        cur_fpath = os.path.join(stock_folder, cur_fname)
+
+        cur_df = pd.read_csv(cur_fpath)
+        cur_df.set_index('Date', inplace=True)
+        cur_df.drop(['Open', 'Close', 'High', 'Low', 'Volume'],
+                    inplace=True, axis=1)
+
+        # The last 4 letters of any file will be .csv
+        # Renaming the Adj Close column to the company's ticker
+        cur_df.rename(columns={'Adj Close': cur_fname[:-4]}, inplace=True)
+        # display(master_df)
+
+        if master_df is None:
+            master_df = cur_df
+        else:
+            master_df = master_df.join(cur_df, how='outer')
+
+    logging.debug('Finished merging dataframes')
+    save_path = os.path.join(save_folder, 'snp500_merged.csv')
+    logging.debug(f'Saving the data to {save_path}')
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+
+    master_df.to_csv(save_path)
+
+    return master_df
+
+
+# %% Function execution
+
+# Constants
+# We want to get the data from 2000 till 2017
+START_DT = dt.datetime(2000, 1, 1)
+END_DT = dt.datetime(2017, 1, 1)
+# We want to place the merged file in data/merged
+STOCK_FOLDER = os.path.join('data', 'stocks')
+MERGED_FOLDER = os.path.join('data', 'merged')
+
+save_tickers()
 get_stock_data(START_DT, END_DT)
-
-# %% Data visualization
-
-# %% Predictive analysis
+merge_dfs(STOCK_FOLDER, MERGED_FOLDER)
