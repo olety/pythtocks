@@ -1,20 +1,21 @@
 # %% Imports
-import datetime
+
+import datetime as dt
 import importlib
 import logging
 import os
-import pickle
 import sys
+import time
 
-import bs4 as bs
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import pandas_datareader as web
-import requests
+import bs4 as bs  # BeautifulSoup, HTML scraping
+import matplotlib.pyplot as plt  # Plots
+import numpy as np  # Arrays
+import pandas as pd  # DataFrames
+import pandas_datareader as web  # Gets stock data from Yahoo
+import requests  # HTTP requests
+from IPython.display import display  # IPython display
+from tqdm import tqdm  # Progress bar
 
-# Fixing pickle
-sys.setrecursionlimit(50000)
 # Pandas fancy tables
 pd.set_option('display.notebook_repr_html', True)
 pd.set_option('max_rows', 10)
@@ -67,8 +68,9 @@ def get_snp_tickers():
     logging.info('Extracting the tickers...')
     res_arr = []
     for row in res_table.findAll('tr')[1:]:
-        res_arr.append(row.findAll('td')[0].a.contents[0])
-
+        # Replacing dots with dashes because otherwise we won't be able to
+        # download them from yahoo finance
+        res_arr.append(row.findAll('td')[0].a.contents[0].replace(',', '-'))
     return res_arr
 
 
@@ -84,18 +86,67 @@ def save_tickers(folder='data', fname='tickers.csv'):
         raise Exception('Bad ticker count - '
                         '{} instead of 505'.format(len(tickers)))
     # Saving the tickers
-    new_fname = os.path.join(os.getcwd(), folder, fname)
-    logging.info(f'Saving the tickers to {new_fname}')
-    tickers.to_csv(new_fname, index=False)
-    logging.info(f'Saved the tickers to {new_fname}')
+    fpath = os.path.join(os.getcwd(), folder, fname)
+    logging.info('Creating the destination folder...')
+    if not os.path.exists(os.path.dirname(fpath)):
+        os.makedirs(os.path.dirname(fpath))
+    logging.info(f'Saving the tickers to {fpath}')
+
+    tickers.to_csv(fpath, index=False)
+    logging.info(f'Saved the tickers to {fpath}')
+
+    return tickers
 
 
-def get_stock_data(folder='data'):
-    pass
+def get_stock_data(start_dt, end_dt, ticker_folder='data',
+                   ticker_fname='tickers.csv', reload_tickers=False,
+                   dest_folder='data', retry_requests=True, max_retries=50,
+                   timeout=5):
+    '''
+    Gets stock data of S&P500 from yahoo and saves it in the {folder}/{tick}.csv
 
-# %% Getting the data
+    Throws an exception is anything goes wrong.
+    '''
+    logging.info('Obtaining the tickers...')
+    if reload_tickers:
+        tickers = save_tickers()
+    else:
+        tickers = pd.read_csv(os.path.join(os.getcwd(),
+                                           ticker_folder, ticker_fname))
+    logging.info('Obtained the tickers...')
+    display(tickers)
+    # We have to check whether the dest folder exists
+    dest_path = os.path.join(os.getcwd(), dest_folder)
+    if not os.path.exists(dest_path):
+        logging.info('Creating the destination folder')
+        os.makedirs(dest_path)
+
+    # Downloading the prices
+    logging.info('Starting processing tickers...')
+    for index, ticker in tqdm(tickers.itertuples(), desc='Tickers processed',
+                              leave=False, file=sys.stdout, unit='company',
+                              total=tickers.shape[0]):
+        dest_fpath = os.path.join(dest_path, f'{ticker}.csv')
+        if not os.path.exists(dest_fpath):
+            # Try to download the stock for max_retries tries, waiting
+            # for timeout in between tries
+            for i in tqdm(range(max_retries), desc='Number of tries',
+                          leave=False, file=sys.stderr, unit='try'):
+                try:
+                    df = web.DataReader(ticker, 'yahoo', start_dt, end_dt)
+                    df.to_csv(dest_fpath)
+                    break
+                except Exception:
+                    # TODO: Change to debug
+                    logging.info('Yahoo has denied our request - '
+                                 f'sleeping for {timeout} seconds')
+                    time.sleep(timeout)
+        else:
+            logging.info(f'Not downloading data for {ticker}, '
+                         'since we already have it')
+    logging.info('Finished processing all tickers!')
+    logging.info(f'You can find the results in the folder {dest_path}')
 
 
-def get_data(tickers):
-    for ticker in tickers:
-        web.get_data_yahoo
+get_stock_data(start_dt=dt.datetime(2000, 1, 1),
+               end_dt=dt.datetime(2017, 1, 1))
