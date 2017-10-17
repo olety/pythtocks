@@ -85,6 +85,14 @@ def save_tickers(folder='data', fname='tickers.csv'):
     if tickers.shape[0] != 505:
         raise Exception('Bad ticker count - '
                         '{} instead of 505'.format(len(tickers)))
+    logging.info('Gotten tickers')
+    tickers.columns = ['Ticker']
+    display(tickers)
+    # Sorting the tickers alphabetically
+    logging.info('Sorting the tickers...')
+    tickers.sort_values(by='Ticker', inplace=True)
+    logging.info('Tickers after sorting')
+    display(tickers)
     # Saving the tickers
     fpath = os.path.join(os.getcwd(), folder, fname)
     logging.info('Creating the destination folder...')
@@ -101,7 +109,7 @@ def save_tickers(folder='data', fname='tickers.csv'):
 def get_stock_data(start_dt, end_dt, ticker_folder='data',
                    ticker_fname='tickers.csv', reload_tickers=False,
                    dest_folder='data', retry_requests=True, max_retries=50,
-                   timeout=5):
+                   timeout=2):
     '''
     Gets stock data of S&P500 from yahoo and saves it in the {folder}/{tick}.csv
 
@@ -133,8 +141,13 @@ def get_stock_data(start_dt, end_dt, ticker_folder='data',
             for i in tqdm(range(max_retries), desc='Number of tries',
                           leave=False, file=sys.stderr, unit='try'):
                 try:
+                    # TODO: Change all 3 to debug
+                    logging.info(f'Trying to get {ticker} data from yahoo...')
                     df = web.DataReader(ticker, 'yahoo', start_dt, end_dt)
+                    logging.info(f'Successfully got {ticker} data from yahoo. '
+                                 'Now saving it...')
                     df.to_csv(dest_fpath)
+                    logging.info(f'Saved the {ticker} data.')
                     break
                 except Exception:
                     # TODO: Change to debug
