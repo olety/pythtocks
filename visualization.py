@@ -1,4 +1,5 @@
 # %% Imports
+import bisect
 import datetime as dt
 import importlib
 import logging
@@ -32,18 +33,24 @@ np.set_printoptions(threshold=10, linewidth=79, edgeitems=5)
 # %% Get the data of one stock (AAPL)
 
 STOCKS_FOLDER = os.path.join('data', 'stocks')
+MERGED_FOLDER = os.path.join('data', 'merged')
 
 # Making 0th column the index because it's the date
 df = pd.read_csv(os.path.join(STOCKS_FOLDER, 'AAPL.csv'),
                  parse_dates=True,
                  index_col=0)
 
+df_merged = pd.read_csv(
+    os.path.join(MERGED_FOLDER, 'snp500_merged.csv'),
+    parse_dates=True, index_col=0)
+
 # %% Regular chart of one stock (AAPL)
 
 df['Adj Close'].plot()
 plt.show()
 
-# %% 150 days moving average plot
+
+# %% 150 days moving average plot of one stock (AAPL)
 
 df_ma = df.copy()
 # Creating the rolling avg column
@@ -101,6 +108,33 @@ plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45)
 plt.suptitle('Apple stock', fontsize=12)
 plt.show()
 
-# %% Correlation matrix
 
+# %% Correlation plot
+
+# Making a correlation matrix
+df_corr = df_merged.corr()
+
+fig = plt.figure()
+
+# Setting up the axis
+ax1 = plt.subplot2grid((1, 1), (0, 0), rowspan=1, colspan=1)
+ax1.invert_yaxis()
+# Plotting the heatmap
+hmap = ax1.pcolor(df_corr.values, cmap=plt.cm.RdYlGn)
+hmap.set_clim(-1, 1)  # Clipping limit
+fig.colorbar(hmap)
+
+
+# TICKS
+# TODO: Use LookupFormatter to make the ticks visible
+ax1.set_xticks(np.arange(df_corr.shape[1]) + 0.5, minor=False)
+ax1.set_xticklabels(df_corr.columns)
+
+ax1.set_yticks(np.arange(df_corr.shape[1]) + 0.5, minor=False)
+ax1.set_yticklabels(df_corr.index)
+
+plt.xticks(rotation=90)
+
+# General
+plt.title('Stock correlation heatmap')
 plt.show()
