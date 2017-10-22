@@ -204,8 +204,8 @@ def merge_dfs(stock_folder, save_folder, reload_data=False):
                           leave=False, unit='file'):
         cur_fpath = os.path.join(stock_folder, cur_fname)
 
-        cur_df = pd.read_csv(cur_fpath)
-        cur_df.set_index('Date', inplace=True)
+        cur_df = pd.read_csv(cur_fpath, index_col=0)
+        # cur_df.set_index('Date', inplace=True)
         cur_df.drop(['Open', 'Close', 'High', 'Low', 'Volume'],
                     inplace=True, axis=1)
 
@@ -240,6 +240,6 @@ END_DT = dt.datetime(2017, 1, 1)
 STOCK_FOLDER = os.path.join('data', 'stocks')
 MERGED_FOLDER = os.path.join('data', 'merged')
 
-save_tickers()
+# save_tickers()
 get_stock_data(START_DT, END_DT)
-merge_dfs(STOCK_FOLDER, MERGED_FOLDER)
+merge_dfs(STOCK_FOLDER, MERGED_FOLDER, reload_data=True)
