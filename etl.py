@@ -5,6 +5,7 @@ import datetime as dt
 import importlib
 import logging
 import os
+import re
 import sys
 import time
 
@@ -113,7 +114,7 @@ def save_tickers(folder='data/tickers', fname='tickers.csv'):
 
 
 def get_stock_data(start_dt, end_dt, reload_tickers=False,
-                   max_tries=50, timeout=2,
+                   max_tries=50, timeout=2, provider='yahoo',
                    ticker_folder=os.path.join('data', 'tickers'),
                    ticker_fname='tickers.csv',
                    dest_folder=os.path.join('data', 'stocks')):
@@ -129,7 +130,7 @@ def get_stock_data(start_dt, end_dt, reload_tickers=False,
         tickers = pd.read_csv(os.path.join(os.getcwd(),
                                            ticker_folder, ticker_fname))
     logging.debug('Obtained the tickers...')
-    display(tickers)
+    logging.debug(tickers)
     # We have to check whether the dest folder exists
     dest_path = os.path.join(os.getcwd(), dest_folder)
     if not os.path.exists(dest_path):
@@ -138,6 +139,7 @@ def get_stock_data(start_dt, end_dt, reload_tickers=False,
 
     # Downloading the prices
     logging.debug('Starting processing tickers...')
+    down_cnt, to_down_cnt = 0, len(tickers)
     for index, ticker in tqdm(tickers.itertuples(), desc='Tickers processed',
                               leave=False, file=sys.stderr, unit='company',
                               total=tickers.shape[0]):
@@ -153,13 +155,15 @@ def get_stock_data(start_dt, end_dt, reload_tickers=False,
             while tries > 0:
                 pbar.update(1)
                 try:
-                    logging.debug(f'Trying to get {ticker} data from yahoo...')
-                    df = web.DataReader(ticker, 'yahoo', start_dt, end_dt)
+                    logging.debug(f'Trying to get {ticker} data'
+                                  f' from {provider}...')
+                    df = web.DataReader(ticker, provider, start_dt, end_dt)
                     tries = 0
+                    down_cnt += 1
                 except Exception as e:
                     tries -= 1
                     logging.debug(e)
-                    logging.debug('Yahoo has denied our request - '
+                    logging.debug(f'{provider} has denied our request - '
                                   f'sleeping for {timeout} seconds')
                     time.sleep(timeout)
             pbar.close()
@@ -168,28 +172,50 @@ def get_stock_data(start_dt, end_dt, reload_tickers=False,
                 logging.debug(f'Couldn\'t get the {ticker} data. Continuing')
                 continue
 
-            logging.debug(f'Successfully got {ticker} data from yahoo. '
+            logging.debug(f'Successfully got {ticker} data from {provider}. '
                           'Now saving it...')
             df.to_csv(dest_fpath)
             logging.debug(f'Saved the {ticker} data.')
         else:
+            to_down_cnt -= 1
             logging.debug(f'Not downloading data for {ticker}, '
                           'since we already have it')
     logging.info('Finished processing all tickers!')
+    logging.info(f'Downloaded: {down_cnt}/{to_down_cnt} items')
     logging.info(f'You can find the results in the folder {dest_path}')
 
 
-def conv_nyse_tickers(dest_fpath=os.path.join('data', 'tickers', 'NYSE.csv'),
-                      source_fpath=os.path.join('data', 'tickers', 'NYSE.txt'),
-                      separator='\t'):
+def conv_nyse_tickers(dest_fpath=os.path.join('data', 'tickers', 'NYSE_proc.csv'),
+                      source_fpath=os.path.join('data', 'tickers', 'NYSE.csv')):
     # Reading the file
-    df = pd.read_csv(source_fpath, sep=separator)
-    df = df['Symbol'].to_frame()
+    logging.info('Reading the NYSE tickers file')
+    s = pd.read_csv(source_fpath)['Symbol']
+    s.str.strip()
+    # Started cleaning - getting the rows that contain '^'
+    logging.debug('Processing hat rows...')
+    contains_hat = s.str.contains('\^')
+    # Cleaning - selecting the rows that contain a hat
+    s_hat = s[contains_hat]
+    # Cleaning - changing hat to -P and dots in those rows to ''
+    s_hat = s_hat.str.replace('^', '-P')
+    s_hat = s_hat.str.replace('.', '')
+    # Cleaning - in other rows, replace dows with dashes
+    logging.debug('Processing no-hat rows...')
+    s = s[contains_hat == False]
+    s = s.str.replace('.', '-')
+    # Merge two series and sort them
+    logging.debug('Merging series together...')
+    s.append(s_hat)
+    s.sort_values(inplace=True)
+    # Save the output to the file
+    logging.info('Finished processing the NYSE tickers file.')
+    logging.info(f'You can find your results in {dest_fpath}')
+    df = s.to_frame()
+    df.columns = ['Ticker']
     df.to_csv(dest_fpath, index=False)
 
 
 # %% Data transformation
-
 # In this step, we want to get the combined DataFrame
 # of all adjusted closing prices
 
@@ -257,6 +283,6 @@ MERGED_FOLDER = os.path.join('data', 'merged')
 # save_tickers()
 conv_nyse_tickers()
 get_stock_data(START_DT, END_DT, max_tries=1,
-               ticker_fname='NYSE.csv',
-               dest_folder=os.path.join('data', 'nyse'), timeout=0.1)
-# merge_dfs(STOCK_FOLDER, MERGED_FOLDER, reload_data=True)
+               ticker_fname='NYSE_proc.csv',
+               dest_folder=os.path.join('data', 'nyse'), timeout=0.1,
+               provider='yahoo')
