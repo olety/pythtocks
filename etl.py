@@ -1,3 +1,4 @@
+#! /bin/python3
 # %% Imports
 
 import datetime as dt
@@ -27,7 +28,7 @@ importlib.reload(logging)
 # FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
 logging.basicConfig(format='%(levelname)s | line %(lineno)s '
                     '| %(funcName)s | %(message)s',
-                    level=logging.INFO, stream=sys.stdout,
+                    level=logging.DEBUG, stream=sys.stdout,
                     datefmt='%H:%M:%S')
 # Numpy printing setup
 np.set_printoptions(threshold=10, linewidth=79, edgeitems=5)
@@ -70,7 +71,7 @@ def get_snp_tickers():
     res_arr = []
     for row in res_table.findAll('tr')[1:]:
         # Replacing dots with dashes because otherwise we won't be able to
-        # download them from yahoo finance
+        # download them from yahoo finance - cleaning the data
         res_arr.append(
             row.findAll('td')[0]
             .a.contents[0]
@@ -111,8 +112,8 @@ def save_tickers(folder='data/tickers', fname='tickers.csv'):
     return tickers
 
 
-def get_stock_data(start_dt, end_dt, reload_tickers=False, retry_requests=True,
-                   max_retries=50, timeout=2,
+def get_stock_data(start_dt, end_dt, reload_tickers=False,
+                   max_tries=50, timeout=2,
                    ticker_folder=os.path.join('data', 'tickers'),
                    ticker_fname='tickers.csv',
                    dest_folder=os.path.join('data', 'stocks')):
@@ -140,36 +141,51 @@ def get_stock_data(start_dt, end_dt, reload_tickers=False, retry_requests=True,
     for index, ticker in tqdm(tickers.itertuples(), desc='Tickers processed',
                               leave=False, file=sys.stderr, unit='company',
                               total=tickers.shape[0]):
+        df = None
         logging.debug(f'Starting a new outer loop iteration for {ticker}')
         dest_fpath = os.path.join(dest_path, f'{ticker}.csv')
         if not os.path.exists(dest_fpath):
-            # Try to download the stock for max_retries tries, waiting
+            # Try to download the stock for max_tries tries, waiting
             # for timeout in between tries
-            pbar = tqdm(range(max_retries), desc='Number of tries',
+            pbar = tqdm(range(max_tries), desc='Number of tries',
                         leave=False, file=sys.stderr, unit='try')
-            retries = max_retries
-            while retries > 0:
+            tries = max_tries
+            while tries > 0:
                 pbar.update(1)
-                retries -= 1
                 try:
                     logging.debug(f'Trying to get {ticker} data from yahoo...')
                     df = web.DataReader(ticker, 'yahoo', start_dt, end_dt)
-                except Exception:
+                    tries = 0
+                except Exception as e:
+                    tries -= 1
+                    logging.debug(e)
                     logging.debug('Yahoo has denied our request - '
                                   f'sleeping for {timeout} seconds')
                     time.sleep(timeout)
-                logging.debug(f'Successfully got {ticker} data from yahoo. '
-                              'Now saving it...')
-                df.to_csv(dest_fpath)
-                logging.debug(f'Saved the {ticker} data.')
-                retries = 0
             pbar.close()
 
+            if df is None:
+                logging.debug(f'Couldn\'t get the {ticker} data. Continuing')
+                continue
+
+            logging.debug(f'Successfully got {ticker} data from yahoo. '
+                          'Now saving it...')
+            df.to_csv(dest_fpath)
+            logging.debug(f'Saved the {ticker} data.')
         else:
             logging.debug(f'Not downloading data for {ticker}, '
                           'since we already have it')
     logging.info('Finished processing all tickers!')
     logging.info(f'You can find the results in the folder {dest_path}')
+
+
+def conv_nyse_tickers(dest_fpath=os.path.join('data', 'tickers', 'NYSE.csv'),
+                      source_fpath=os.path.join('data', 'tickers', 'NYSE.txt'),
+                      separator='\t'):
+    # Reading the file
+    df = pd.read_csv(source_fpath, sep=separator)
+    df = df['Symbol'].to_frame()
+    df.to_csv(dest_fpath, index=False)
 
 
 # %% Data transformation
@@ -231,7 +247,6 @@ def merge_dfs(stock_folder, save_folder, reload_data=False):
 
 
 # %% Function execution
-
 # Constants
 # We want to get the data from 2000 till 2017
 START_DT = dt.datetime(2000, 1, 1)
@@ -239,7 +254,9 @@ END_DT = dt.datetime(2017, 1, 1)
 # We want to place the merged file in data/merged
 STOCK_FOLDER = os.path.join('data', 'stocks')
 MERGED_FOLDER = os.path.join('data', 'merged')
-
 # save_tickers()
-get_stock_data(START_DT, END_DT)
-merge_dfs(STOCK_FOLDER, MERGED_FOLDER, reload_data=True)
+conv_nyse_tickers()
+get_stock_data(START_DT, END_DT, max_tries=1,
+               ticker_fname='NYSE.csv',
+               dest_folder=os.path.join('data', 'nyse'), timeout=0.1)
+# merge_dfs(STOCK_FOLDER, MERGED_FOLDER, reload_data=True)
